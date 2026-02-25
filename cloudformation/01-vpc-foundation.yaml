@@ -1,0 +1,435 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw Multi-Deployment - VPC Foundation Layer'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: 'Network Configuration'
+        Parameters:
+          - VpcCIDR
+          - PublicSubnetACIDR
+          - PublicSubnetBCIDR
+          - PrivateSubnetACIDR
+          - PrivateSubnetBCIDR
+      - Label:
+          default: 'Availability Zones'
+        Parameters:
+          - AvailabilityZone1
+          - AvailabilityZone2
+      - Label:
+          default: 'Cost Optimization'
+        Parameters:
+          - EnableNATGatewayRedundancy
+          - EnableVPCFlowLogs
+
+Parameters:
+  VpcCIDR:
+    Description: CIDR block for VPC
+    Type: String
+    Default: '10.0.0.0/16'
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(/([0-9]|[1-2][0-9]|3[0-2]))$'
+
+  PublicSubnetACIDR:
+    Description: CIDR for Public Subnet A
+    Type: String
+    Default: '10.0.1.0/24'
+
+  PublicSubnetBCIDR:
+    Description: CIDR for Public Subnet B
+    Type: String
+    Default: '10.0.2.0/24'
+
+  PrivateSubnetACIDR:
+    Description: CIDR for Private Subnet A
+    Type: String
+    Default: '10.0.10.0/24'
+
+  PrivateSubnetBCIDR:
+    Description: CIDR for Private Subnet B
+    Type: String
+    Default: '10.0.11.0/24'
+
+  AvailabilityZone1:
+    Description: First Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+
+  AvailabilityZone2:
+    Description: Second Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+
+  EnableNATGatewayRedundancy:
+    Description: Enable NAT Gateway in both AZs (costs 2x but provides HA)
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+  EnableVPCFlowLogs:
+    Description: Enable VPC Flow Logs for network monitoring
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  CreateRedundantNAT: !Equals [!Ref EnableNATGatewayRedundancy, 'true']
+  CreateFlowLogs: !Equals [!Ref EnableVPCFlowLogs, 'true']
+
+Resources:
+  # =====================================================
+  # VPC
+  # =====================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-VPC'
+        - Key: Project
+          Value: 'OpenClaw-Multi'
+
+  # =====================================================
+  # Internet Gateway
+  # =====================================================
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-IGW'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # =====================================================
+  # Public Subnets
+  # =====================================================
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetACIDR
+      AvailabilityZone: !Ref AvailabilityZone1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Public-A'
+        - Key: Type
+          Value: 'Public'
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetBCIDR
+      AvailabilityZone: !Ref AvailabilityZone2
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Public-B'
+        - Key: Type
+          Value: 'Public'
+
+  # =====================================================
+  # Private Subnets
+  # =====================================================
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnetACIDR
+      AvailabilityZone: !Ref AvailabilityZone1
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Private-A'
+        - Key: Type
+          Value: 'Private'
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnetBCIDR
+      AvailabilityZone: !Ref AvailabilityZone2
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Private-B'
+        - Key: Type
+          Value: 'Private'
+
+  # =====================================================
+  # NAT Gateways
+  # =====================================================
+  NATGatewayAEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-NAT-A-EIP'
+
+  NATGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATGatewayAEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-NAT-A'
+
+  # Optional: Redundant NAT Gateway in AZ-B
+  NATGatewayBEIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateRedundantNAT
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-NAT-B-EIP'
+
+  NATGatewayB:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateRedundantNAT
+    Properties:
+      AllocationId: !GetAtt NATGatewayBEIP.AllocationId
+      SubnetId: !Ref PublicSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-NAT-B'
+
+  # =====================================================
+  # Route Tables - Public
+  # =====================================================
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Public-RT'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  # =====================================================
+  # Route Tables - Private
+  # =====================================================
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Private-A-RT'
+
+  PrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NATGatewayA
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTableA
+
+  PrivateRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Private-B-RT'
+
+  PrivateRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !If [CreateRedundantNAT, !Ref NATGatewayB, !Ref NATGatewayA]
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTableB
+
+  # =====================================================
+  # VPC Flow Logs (Optional)
+  # =====================================================
+  FlowLogsRole:
+    Type: AWS::IAM::Role
+    Condition: CreateFlowLogs
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: CloudWatchLogPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:DescribeLogStreams'
+                Resource: !GetAtt FlowLogsLogGroup.Arn
+
+  FlowLogsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CreateFlowLogs
+    Properties:
+      LogGroupName: !Sub '/aws/vpc/${AWS::StackName}'
+      RetentionInDays: 7
+
+  VPCFlowLog:
+    Type: AWS::EC2::FlowLog
+    Condition: CreateFlowLogs
+    Properties:
+      ResourceType: VPC
+      ResourceId: !Ref VPC
+      TrafficType: ALL
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref FlowLogsLogGroup
+      DeliverLogsPermissionArn: !GetAtt FlowLogsRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-FlowLog'
+
+  # =====================================================
+  # S3 VPC Endpoint (Gateway Endpoint - Free)
+  # =====================================================
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      RouteTableIds:
+        - !Ref PrivateRouteTableA
+        - !Ref PrivateRouteTableB
+      VpcEndpointType: Gateway
+
+  # =====================================================
+  # SSM Parameters for Cross-Stack Reference
+  # =====================================================
+  VPCIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/vpc-id'
+      Type: String
+      Value: !Ref VPC
+      Description: VPC ID for OpenClaw Multi-Deployment
+
+  PrivateSubnetAParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/subnet-private-a'
+      Type: String
+      Value: !Ref PrivateSubnetA
+
+  PrivateSubnetBParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/subnet-private-b'
+      Type: String
+      Value: !Ref PrivateSubnetB
+
+  PublicSubnetAParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/subnet-public-a'
+      Type: String
+      Value: !Ref PublicSubnetA
+
+  PublicSubnetBParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/subnet-public-b'
+      Type: String
+      Value: !Ref PublicSubnetB
+
+# =====================================================
+# Outputs
+# =====================================================
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPC-ID'
+
+  PublicSubnetA:
+    Description: Public Subnet A ID
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnetA'
+
+  PublicSubnetB:
+    Description: Public Subnet B ID
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnetB'
+
+  PrivateSubnetA:
+    Description: Private Subnet A ID
+    Value: !Ref PrivateSubnetA
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetA'
+
+  PrivateSubnetB:
+    Description: Private Subnet B ID
+    Value: !Ref PrivateSubnetB
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetB'
+
+  NATGatewayAIP:
+    Description: NAT Gateway A Public IP
+    Value: !Ref NATGatewayAEIP
+
+  NATGatewayBIP:
+    Description: NAT Gateway B Public IP (if enabled)
+    Value: !If [CreateRedundantNAT, !Ref NATGatewayBEIP, 'Not Created']
+
+  VPCCostEstimate:
+    Description: Monthly cost estimate for VPC infrastructure
+    Value: !Sub 
+      - 'NAT Gateway: $${NATCost}/mo, VPC Flow Logs: $${FlowLogCost}/mo, Total: $${TotalCost}/mo'
+      - NATCost: !If [CreateRedundantNAT, '64.80', '32.40']
+        FlowLogCost: !If [CreateFlowLogs, '~10', '0']
+        TotalCost: !If 
+          - CreateRedundantNAT
+          - !If [CreateFlowLogs, '~74.80', '64.80']
+          - !If [CreateFlowLogs, '~42.40', '32.40']

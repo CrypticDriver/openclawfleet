@@ -1,0 +1,49 @@
+# Created by狗蛋 (Goudan AI Assistant)
+# Project: OpenClaw Multi-Deployment on AWS
+# Date: 2026-02-26
+
+*.pyc
+__pycache__/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# AWS
+*.pem
+*.key
+credentials
+config
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+package-lock.json
+
+# Temporary
+tmp/
+temp/
+*.tmp

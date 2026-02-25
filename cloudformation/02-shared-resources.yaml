@@ -1,0 +1,393 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw Multi-Deployment - Shared Resources (ALB, VPC Endpoints, Monitoring)'
+
+Parameters:
+  FoundationStackName:
+    Description: Name of the VPC Foundation stack
+    Type: String
+    Default: 'openclaw-foundation'
+
+  CertificateArn:
+    Description: ACM Certificate ARN for HTTPS (optional, will create self-signed if empty)
+    Type: String
+    Default: ''
+
+  EnableVPCEndpoints:
+    Description: Enable VPC Endpoints for private connectivity ($21.60/month)
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  ALBAccessLogsBucket:
+    Description: S3 bucket for ALB access logs (leave empty to skip)
+    Type: String
+    Default: ''
+
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
+  CreateVPCEndpoints: !Equals [!Ref EnableVPCEndpoints, 'true']
+  EnableAccessLogs: !Not [!Equals [!Ref ALBAccessLogsBucket, '']]
+
+Resources:
+  # =====================================================
+  # Application Load Balancer
+  # =====================================================
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: 
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTPS from anywhere'
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTP from anywhere (redirect to HTTPS)'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ALB-SG'
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${AWS::StackName}-ALB'
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PublicSubnetA'
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PublicSubnetB'
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ALB'
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+        - Key: deletion_protection.enabled
+          Value: 'false'
+        - !If
+          - EnableAccessLogs
+          - Key: access_logs.s3.enabled
+            Value: 'true'
+          - !Ref AWS::NoValue
+        - !If
+          - EnableAccessLogs
+          - Key: access_logs.s3.bucket
+            Value: !Ref ALBAccessLogsBucket
+          - !Ref AWS::NoValue
+
+  # Default Target Group (health check endpoint)
+  DefaultTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${AWS::StackName}-default'
+      Port: 80
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      HealthCheckEnabled: true
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-default-TG'
+
+  # HTTPS Listener
+  HTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '200'
+            ContentType: 'text/plain'
+            MessageBody: 'OpenClaw Multi-Deployment ALB - Ready'
+
+  # HTTP Listener (redirect to HTTPS)
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - !If
+          - HasCertificate
+          - Type: redirect
+            RedirectConfig:
+              Protocol: HTTPS
+              Port: '443'
+              StatusCode: HTTP_301
+          - Type: fixed-response
+            FixedResponseConfig:
+              StatusCode: '200'
+              ContentType: 'text/plain'
+              MessageBody: 'OpenClaw Multi-Deployment ALB - Ready (HTTP)'
+
+  # =====================================================
+  # VPC Endpoints
+  # =====================================================
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateVPCEndpoints
+    Properties:
+      GroupDescription: Security group for VPC Endpoints
+      VpcId:
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref InstanceSecurityGroup
+          Description: 'HTTPS from OpenClaw instances'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-VPCEndpoint-SG'
+
+  # Bedrock Runtime Endpoint
+  BedrockRuntimeEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVPCEndpoints
+    Properties:
+      VpcId:
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.bedrock-runtime'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetA'
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetB'
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  # SSM Endpoint
+  SSMEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVPCEndpoints
+    Properties:
+      VpcId:
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetA'
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetB'
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  # SSM Messages Endpoint
+  SSMMessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVPCEndpoints
+    Properties:
+      VpcId:
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssmmessages'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetA'
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetB'
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  # CloudWatch Logs Endpoint
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVPCEndpoints
+    Properties:
+      VpcId:
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetA'
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetB'
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  # =====================================================
+  # Security Group for OpenClaw Instances
+  # =====================================================
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for OpenClaw instances
+      VpcId:
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 18789
+          ToPort: 18789
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: 'OpenClaw Gateway from ALB'
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTPS to internet (Bedrock, SSM, etc.)'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Instance-SG'
+
+  # =====================================================
+  # CloudWatch Log Group
+  # =====================================================
+  OpenClawLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/openclaw/${AWS::StackName}'
+      RetentionInDays: 7
+
+  # =====================================================
+  # SNS Topic for Alerts
+  # =====================================================
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${AWS::StackName}-alerts'
+      DisplayName: 'OpenClaw Multi-Deployment Alerts'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alerts'
+
+  # =====================================================
+  # SSM Parameters for Configuration
+  # =====================================================
+  ALBDNSParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/alb-dns'
+      Type: String
+      Value: !GetAtt ApplicationLoadBalancer.DNSName
+      Description: 'ALB DNS name'
+
+  ALBSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/alb-sg'
+      Type: String
+      Value: !Ref ALBSecurityGroup
+
+  InstanceSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/instance-sg'
+      Type: String
+      Value: !Ref InstanceSecurityGroup
+
+  DefaultTargetGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/default-tg'
+      Type: String
+      Value: !Ref DefaultTargetGroup
+
+  LogGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/log-group'
+      Type: String
+      Value: !Ref OpenClawLogGroup
+
+  SNSTopicParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/openclaw/${AWS::StackName}/sns-topic'
+      Type: String
+      Value: !Ref AlertTopic
+
+# =====================================================
+# Outputs
+# =====================================================
+Outputs:
+  LoadBalancerURL:
+    Description: ALB URL
+    Value: !Sub 
+      - '${Protocol}://${DNS}'
+      - Protocol: !If [HasCertificate, 'https', 'http']
+        DNS: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-ALB-URL'
+
+  LoadBalancerDNS:
+    Description: ALB DNS Name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-ALB-DNS'
+
+  LoadBalancerArn:
+    Description: ALB ARN
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub '${AWS::StackName}-ALB-ARN'
+
+  HTTPSListenerArn:
+    Description: HTTPS Listener ARN (if certificate provided)
+    Value: !If [HasCertificate, !Ref HTTPSListener, 'N/A']
+    Export:
+      Name: !Sub '${AWS::StackName}-HTTPS-Listener'
+
+  HTTPListenerArn:
+    Description: HTTP Listener ARN
+    Value: !Ref HTTPListener
+    Export:
+      Name: !Sub '${AWS::StackName}-HTTP-Listener'
+
+  InstanceSecurityGroup:
+    Description: Security Group for OpenClaw instances
+    Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-Instance-SG'
+
+  DefaultTargetGroup:
+    Description: Default Target Group ARN
+    Value: !Ref DefaultTargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-Default-TG'
+
+  SNSTopicArn:
+    Description: SNS Topic for alerts
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SNS-Topic'
+
+  LogGroupName:
+    Description: CloudWatch Log Group
+    Value: !Ref OpenClawLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'
+
+  VPCEndpointsCreated:
+    Description: VPC Endpoints status
+    Value: !If [CreateVPCEndpoints, 'Enabled ($21.60/mo)', 'Disabled']
+
+  MonthlyCostEstimate:
+    Description: Monthly cost estimate for shared resources
+    Value: !Sub
+      - 'ALB: $16.20, VPC Endpoints: $${EndpointCost}, Total: $${TotalCost}/mo'
+      - EndpointCost: !If [CreateVPCEndpoints, '21.60', '0']
+        TotalCost: !If [CreateVPCEndpoints, '37.80', '16.20']
