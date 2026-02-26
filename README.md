@@ -4,25 +4,43 @@
 
 ---
 
-## 🚀 One-Click Deploy (Launch Stack Button)
+## 🚀 One-Click Deploy
 
-**不需要命令行！直接点击按钮部署！**
+### Step 1: Download Template
 
-### Launch in AWS Console
+下载主模板到本地：
 
-点击下面的按钮，在 AWS CloudFormation 控制台一键部署完整系统：
+**[📥 Download: 00-master-all-in-one.yaml](https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml)**
+
+（右键 → 另存为 `00-master-all-in-one.yaml`）
+
+### Step 2: Launch in AWS Console
 
 | Region | Launch |
 |--------|--------|
-| **US West (Oregon)** | [![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/create/review?stackName=openclaw-complete&templateURL=https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml) |
-| **US East (N. Virginia)** | [![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?stackName=openclaw-complete&templateURL=https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml) |
+| **US West (Oregon)** | [Open CloudFormation Console →](https://console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/create) |
+| **US East (N. Virginia)** | [Open CloudFormation Console →](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create) |
 
-**步骤：**
-1. 点击上面的按钮
-2. 填写 Key Pair 名称（唯一必填项）
-3. 点击 "Create Stack"
-4. 等待 15 分钟
-5. 在 Outputs 标签页获取访问 URL
+**In AWS Console:**
+1. Click "Create stack" → "With new resources"
+2. Choose "Upload a template file"
+3. Click "Choose file" → select downloaded `00-master-all-in-one.yaml`
+4. Click "Next"
+5. Stack name: `openclaw-complete`
+6. Fill in Key Pair name
+7. Click "Next" → "Next" → ✅ "I acknowledge..." → "Submit"
+8. Wait 15-20 minutes
+
+### Alternative: Command Line (No Download Needed)
+
+```bash
+aws cloudformation create-stack \
+  --region us-west-2 \
+  --stack-name openclaw-complete \
+  --template-body file://<(curl -s https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml) \
+  --parameters ParameterKey=KeyPairName,ParameterValue=YOUR_KEY_PAIR \
+  --capabilities CAPABILITY_NAMED_IAM
+```
 
 **就这么简单！** 🎉
 

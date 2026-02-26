@@ -1,34 +1,186 @@
-# 🚀 One-Click Deployment Guide
+# 🚀 Deployment Guide
 
-## Launch Stack Button（真正的一键部署）
+## CloudFormation Limitation
 
-**无需命令行！无需脚本！直接在浏览器完成！**
+⚠️ **Important:** AWS CloudFormation does not support loading templates directly from GitHub URLs. You need to either:
 
----
-
-## Step 1: Click Launch Button
-
-点击下面的按钮，在 AWS CloudFormation 控制台打开：
-
-### US West (Oregon) - us-west-2
-
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/create/review?stackName=openclaw-complete&templateURL=https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml)
-
-### US East (N. Virginia) - us-east-1
-
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?stackName=openclaw-complete&templateURL=https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml)
-
-### EU (Ireland) - eu-west-1
-
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/create/review?stackName=openclaw-complete&templateURL=https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml)
-
-### AP Northeast (Tokyo) - ap-northeast-1
-
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=ap-northeast-1#/stacks/create/review?stackName=openclaw-complete&templateURL=https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml)
+1. **Download and upload** (recommended for beginners)
+2. **Use AWS CLI** (for developers)
+3. **Host templates in S3** (for production)
 
 ---
 
-## Step 2: Fill Parameters
+## Method 1: Download & Upload (Recommended)
+
+### Step 1: Download Template
+
+**[📥 Click here to download: 00-master-all-in-one.yaml](https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml)**
+
+(Right-click → Save As → `00-master-all-in-one.yaml`)
+
+### Step 2: Open AWS Console
+
+Choose your region:
+
+| Region | Console Link |
+|--------|--------------|
+| **US West (Oregon)** | [Open CloudFormation →](https://console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/create) |
+| **US East (N. Virginia)** | [Open CloudFormation →](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create) |
+| **EU (Ireland)** | [Open CloudFormation →](https://console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/create) |
+| **AP (Tokyo)** | [Open CloudFormation →](https://console.aws.amazon.com/cloudformation/home?region=ap-northeast-1#/stacks/create) |
+
+### Step 3: Upload Template
+
+1. Click **"Create stack"** → "With new resources"
+2. Select **"Upload a template file"**
+3. Click **"Choose file"**
+4. Select the downloaded `00-master-all-in-one.yaml`
+5. Click **"Next"**
+
+### Step 4: Configure Stack
+
+**Stack Details:**
+- Stack name: `openclaw-complete`
+
+**Parameters:**
+- **KeyPairName:** (Required) Your EC2 Key Pair name
+  - Don't have one? [Create Key Pair →](https://console.aws.amazon.com/ec2/home#KeyPairs:)
+- **InstanceName:** `openclaw-1` (default is fine)
+- **NotificationEmail:** (Optional) Your email for alerts
+- Other parameters: Use defaults
+
+Click **"Next"**
+
+### Step 5: Configure Stack Options
+
+- Tags: (Optional) Add tags if needed
+- Permissions: Leave as default
+- Stack failure options: Leave as default
+
+Click **"Next"**
+
+### Step 6: Review and Create
+
+1. Review all settings
+2. Scroll to bottom
+3. ✅ Check **"I acknowledge that AWS CloudFormation might create IAM resources with custom names"**
+4. ✅ Check **"I acknowledge that AWS CloudFormation might require the following capability: CAPABILITY_NAMED_IAM"**
+5. Click **"Submit"**
+
+### Step 7: Wait for Completion
+
+**Time:** 15-20 minutes
+
+**What to watch:**
+- Go to **"Events"** tab to see progress
+- Status should change: `CREATE_IN_PROGRESS` → `CREATE_COMPLETE`
+- If you see errors, check the error message
+
+### Step 8: Get Access URLs
+
+When status is `CREATE_COMPLETE`:
+
+1. Click **"Outputs"** tab
+2. Find these keys:
+   - **DashboardURL** - Management console
+   - **AccessURL** - First instance URL
+   - **GetTokenCommand** - Command to get token
+
+3. Copy **DashboardURL** and open in browser
+
+**You should see:**
+```
+🐕 OpenClaw Multi-Deployment
+统一管理面板
+
+总实例数: 1   健康实例: 1   总容量: 1
+
+[openclaw-1 card with "打开 Web UI" button]
+```
+
+4. Click **"打开 Web UI"** to access your OpenClaw instance!
+
+---
+
+## Method 2: AWS CLI (For Developers)
+
+### Prerequisites
+
+- AWS CLI installed
+- AWS credentials configured
+- `curl` installed
+
+### Deploy Command
+
+```bash
+# Download template
+curl -o /tmp/openclaw-complete.yaml \
+  https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml
+
+# Deploy stack
+aws cloudformation create-stack \
+  --region us-west-2 \
+  --stack-name openclaw-complete \
+  --template-body file:///tmp/openclaw-complete.yaml \
+  --parameters ParameterKey=KeyPairName,ParameterValue=YOUR_KEY_PAIR \
+  --capabilities CAPABILITY_NAMED_IAM
+
+# Wait for completion
+aws cloudformation wait stack-create-complete \
+  --region us-west-2 \
+  --stack-name openclaw-complete
+
+# Get outputs
+aws cloudformation describe-stacks \
+  --region us-west-2 \
+  --stack-name openclaw-complete \
+  --query 'Stacks[0].Outputs'
+```
+
+**One-liner:**
+```bash
+curl -s https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml | \
+aws cloudformation create-stack \
+  --region us-west-2 \
+  --stack-name openclaw-complete \
+  --template-body file:///dev/stdin \
+  --parameters ParameterKey=KeyPairName,ParameterValue=YOUR_KEY_PAIR \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+---
+
+## Method 3: Host in S3 (For Production)
+
+### Setup (One-time)
+
+```bash
+# Create S3 bucket (replace with your bucket name)
+BUCKET_NAME="my-openclaw-templates"
+aws s3 mb s3://$BUCKET_NAME --region us-west-2
+
+# Upload templates
+aws s3 sync cloudformation/ s3://$BUCKET_NAME/cloudformation/ --acl public-read
+
+# Get template URL
+echo "https://$BUCKET_NAME.s3.us-west-2.amazonaws.com/cloudformation/00-master-all-in-one.yaml"
+```
+
+### Update Nested Stack URLs
+
+Edit `00-master-all-in-one.yaml` and replace GitHub URLs with S3 URLs:
+
+```yaml
+TemplateURL: https://my-openclaw-templates.s3.us-west-2.amazonaws.com/cloudformation/01-vpc-foundation.yaml
+```
+
+### Deploy
+
+Now you can use the Launch Stack button with your S3 URL!
+
+---
+
+## Troubleshooting
 
 在 CloudFormation 控制台，只需填写以下参数：
 
