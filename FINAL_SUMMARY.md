@@ -1,8 +1,8 @@
-# 🎉 OpenClaw Multi-Deployment - Public Release
+# 🎉 OpenClawFleet - Public Release
 
 **Status:** ✅ **PRODUCTION READY & PUBLIC**
 
-**GitHub:** https://github.com/CrypticDriver/openclaw-multi-deployment
+**GitHub:** https://github.com/CrypticDriver/openclawfleet
 
 ---
 
@@ -38,7 +38,7 @@
 ## 📂 Project Structure (10 Files)
 
 ```
-openclaw-multi-deployment/
+openclawfleet/
 ├── README.md                          # Main page + Launch Stack buttons
 ├── LAUNCH_STACK_GUIDE.md             # Detailed deployment tutorial
 ├── ARCHITECTURE.md                    # Architecture design document
@@ -63,7 +63,7 @@ openclaw-multi-deployment/
 
 ### For End Users
 
-1. Go to https://github.com/CrypticDriver/openclaw-multi-deployment
+1. Go to https://github.com/CrypticDriver/openclawfleet
 2. Click "Launch Stack" button
 3. Fill in Key Pair name
 4. Click "Create Stack"
@@ -75,10 +75,10 @@ openclaw-multi-deployment/
 
 ```bash
 # Clone repo
-git clone https://github.com/CrypticDriver/openclaw-multi-deployment.git
+git clone https://github.com/CrypticDriver/openclawfleet.git
 
 # Review templates
-cd openclaw-multi-deployment/cloudformation
+cd openclawfleet/cloudformation
 
 # Deploy via CLI (optional)
 aws cloudformation create-stack \
@@ -253,8 +253,8 @@ aws cloudformation create-stack \
 
 ## 🔗 Links
 
-- **GitHub:** https://github.com/CrypticDriver/openclaw-multi-deployment
-- **Issues:** https://github.com/CrypticDriver/openclaw-multi-deployment/issues
+- **GitHub:** https://github.com/CrypticDriver/openclawfleet
+- **Issues:** https://github.com/CrypticDriver/openclawfleet/issues
 - **OpenClaw:** https://github.com/openclaw/openclaw
 
 ---
@@ -267,6 +267,6 @@ aws cloudformation create-stack \
 
 ---
 
-**Ready to deploy?** [Launch now →](https://github.com/CrypticDriver/openclaw-multi-deployment)
+**Ready to deploy?** [Launch now →](https://github.com/CrypticDriver/openclawfleet)
 
 **Project Status: ✅ COMPLETE & PUBLIC** 🎉

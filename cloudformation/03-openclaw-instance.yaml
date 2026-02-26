@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'OpenClaw Multi-Deployment - OpenClaw Instance with Auto Scaling'
+Description: 'OpenClawFleet - OpenClaw Instance with Auto Scaling'
 
 Parameters:
   FoundationStackName:

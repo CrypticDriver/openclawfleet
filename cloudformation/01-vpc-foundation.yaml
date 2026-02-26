@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'OpenClaw Multi-Deployment - VPC Foundation Layer'
+Description: 'OpenClawFleet - VPC Foundation Layer'
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -351,7 +351,7 @@ Resources:
       Name: !Sub '/openclaw/${AWS::StackName}/vpc-id'
       Type: String
       Value: !Ref VPC
-      Description: VPC ID for OpenClaw Multi-Deployment
+      Description: VPC ID for OpenClawFleet
 
   PrivateSubnetAParameter:
     Type: AWS::SSM::Parameter

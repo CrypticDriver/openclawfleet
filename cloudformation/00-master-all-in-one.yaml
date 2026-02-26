@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'OpenClaw Multi-Deployment - Master Stack (All-in-One Deployment)'
+Description: 'OpenClawFleet - Master Stack (All-in-One Deployment)'
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -17,12 +17,6 @@ Metadata:
           - InstanceType
           - BedrockModel
           - VolumeSize
-      - Label:
-          default: 'Scaling Configuration'
-        Parameters:
-          - MinSize
-          - DesiredCapacity
-          - MaxSize
       - Label:
           default: 'Advanced Options'
         Parameters:
@@ -81,26 +75,8 @@ Parameters:
       - 'us.amazon.nova-pro-v1:0'
       - 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
 
-  MinSize:
-    Description: Minimum number of instances
-    Type: Number
-    Default: 1
-    MinValue: 0
-    MaxValue: 10
 
-  DesiredCapacity:
-    Description: Desired number of instances
-    Type: Number
-    Default: 1
-    MinValue: 0
-    MaxValue: 10
 
-  MaxSize:
-    Description: Maximum number of instances
-    Type: Number
-    Default: 3
-    MinValue: 1
-    MaxValue: 10
 
   VolumeSize:
     Description: EBS volume size in GB
@@ -148,7 +124,7 @@ Resources:
   FoundationStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/01-vpc-foundation.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/01-vpc-foundation.yaml
       Parameters:
         AvailabilityZones: !Join
           - ','
@@ -169,7 +145,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn: FoundationStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/02-shared-resources.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/02-shared-resources.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         DeployVPCEndpoints: !Ref DeployVPCEndpoints
@@ -187,7 +163,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/04-dashboard.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/04-dashboard.yaml
       Parameters:
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
       Tags:
@@ -204,7 +180,7 @@ Resources:
     Condition: Deploy1
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -212,9 +188,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -231,7 +207,7 @@ Resources:
     Condition: Deploy2
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -239,9 +215,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -258,7 +234,7 @@ Resources:
     Condition: Deploy3
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -266,9 +242,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -285,7 +261,7 @@ Resources:
     Condition: Deploy4
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -293,9 +269,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -312,7 +288,7 @@ Resources:
     Condition: Deploy5
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -320,9 +296,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -339,7 +315,7 @@ Resources:
     Condition: Deploy6
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -347,9 +323,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -362,7 +338,7 @@ Resources:
     Condition: Deploy7
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -370,9 +346,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -385,7 +361,7 @@ Resources:
     Condition: Deploy8
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -393,9 +369,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -408,7 +384,7 @@ Resources:
     Condition: Deploy9
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -416,9 +392,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances
@@ -431,7 +407,7 @@ Resources:
     Condition: Deploy10
     DependsOn: SharedStack
     Properties:
-      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+      TemplateURL: https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
       Parameters:
         FoundationStackName: !GetAtt FoundationStack.Outputs.StackName
         SharedStackName: !GetAtt SharedStack.Outputs.StackName
@@ -439,9 +415,9 @@ Resources:
         InstanceType: !Ref InstanceType
         BedrockModel: !Ref BedrockModel
         KeyPairName: !Ref KeyPairName
-        MinSize: !Ref MinSize
-        DesiredCapacity: !Ref DesiredCapacity
-        MaxSize: !Ref MaxSize
+        MinSize: 1
+        DesiredCapacity: 1
+        MaxSize: 1
         VolumeSize: !Ref VolumeSize
         EnableDetailedMonitoring: !Ref EnableDetailedMonitoring
         UseSpotInstances: !Ref UseSpotInstances

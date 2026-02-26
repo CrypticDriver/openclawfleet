@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'OpenClaw Multi-Deployment - Dashboard (Management Console)'
+Description: 'OpenClawFleet - Dashboard (Management Console)'
 
 Parameters:
   SharedStackName:
@@ -292,7 +292,7 @@ Resources:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenClaw Multi-Deployment Dashboard</title>
+    <title>OpenClawFleet Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -391,7 +391,7 @@ Resources:
 <body>
     <div class="container">
         <div class="header">
-            <h1>🐕 OpenClaw Multi-Deployment</h1>
+            <h1>🐕 OpenClawFleet</h1>
             <p>统一管理面板</p>
         </div>
         
@@ -710,7 +710,7 @@ Resources:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenClaw Multi-Deployment - Dashboard</title>
+    <title>OpenClawFleet - Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -820,7 +820,7 @@ Resources:
 <body>
     <div class="container">
         <div class="header">
-            <h1>🐕 OpenClaw Multi-Deployment</h1>
+            <h1>🐕 OpenClawFleet</h1>
             <p>统一管理面板</p>
         </div>
         

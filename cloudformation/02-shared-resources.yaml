@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'OpenClaw Multi-Deployment - Shared Resources (ALB, VPC Endpoints, Monitoring)'
+Description: 'OpenClawFleet - Shared Resources (ALB, VPC Endpoints, Monitoring)'
 
 Parameters:
   FoundationStackName:
@@ -121,7 +121,7 @@ Resources:
           FixedResponseConfig:
             StatusCode: '200'
             ContentType: 'text/plain'
-            MessageBody: 'OpenClaw Multi-Deployment ALB - Ready'
+            MessageBody: 'OpenClawFleet ALB - Ready'
 
   # HTTP Listener (redirect to HTTPS)
   HTTPListener:
@@ -142,7 +142,7 @@ Resources:
             FixedResponseConfig:
               StatusCode: '200'
               ContentType: 'text/plain'
-              MessageBody: 'OpenClaw Multi-Deployment ALB - Ready (HTTP)'
+              MessageBody: 'OpenClawFleet ALB - Ready (HTTP)'
 
   # =====================================================
   # VPC Endpoints
@@ -269,7 +269,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: !Sub '${AWS::StackName}-alerts'
-      DisplayName: 'OpenClaw Multi-Deployment Alerts'
+      DisplayName: 'OpenClawFleet Alerts'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-alerts'

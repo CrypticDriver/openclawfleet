@@ -1,4 +1,4 @@
-# Architecture Design - OpenClaw Multi-Deployment
+# Architecture Design - OpenClawFleet
 
 ## 概览
 
@@ -481,4 +481,4 @@ MixedInstancesPolicy:
 
 **Architecture Version:** 1.0  
 **Last Updated:** 2026-02-26  
-**Author:** OpenClaw Multi-Deployment Team
+**Author:** OpenClawFleet Team

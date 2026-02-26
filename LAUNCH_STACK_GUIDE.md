@@ -14,7 +14,7 @@
 
 ### Step 1: Download Template
 
-**[📥 Click here to download: 00-master-all-in-one.yaml](https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml)**
+**[📥 Click here to download: 00-master-all-in-one.yaml](https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/00-master-all-in-one.yaml)**
 
 (Right-click → Save As → `00-master-all-in-one.yaml`)
 
@@ -90,7 +90,7 @@ When status is `CREATE_COMPLETE`:
 
 **You should see:**
 ```
-🐕 OpenClaw Multi-Deployment
+🐕 OpenClawFleet
 统一管理面板
 
 总实例数: 1   健康实例: 1   总容量: 1
@@ -115,7 +115,7 @@ When status is `CREATE_COMPLETE`:
 ```bash
 # Download template
 curl -o /tmp/openclaw-complete.yaml \
-  https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml
+  https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/00-master-all-in-one.yaml
 
 # Deploy stack
 aws cloudformation create-stack \
@@ -139,7 +139,7 @@ aws cloudformation describe-stacks \
 
 **One-liner:**
 ```bash
-curl -s https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml | \
+curl -s https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/00-master-all-in-one.yaml | \
 aws cloudformation create-stack \
   --region us-west-2 \
   --stack-name openclaw-complete \
@@ -244,7 +244,7 @@ https://abc123xyz.execute-api.us-west-2.amazonaws.com
 **你会看到：**
 ```
 ┌─────────────────────────────────────┐
-│  🐕 OpenClaw Multi-Deployment       │
+│  🐕 OpenClawFleet       │
 │                                     │
 │  总实例数: 1   健康实例: 1   总容量: 1│
 │                                     │
@@ -314,7 +314,7 @@ http://your-alb-url/openclaw-1/?token=YOUR_TOKEN
 2. 点击 "Create stack"
 3. 使用模板 URL:
    ```
-   https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/03-openclaw-instance.yaml
+   https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/03-openclaw-instance.yaml
    ```
 4. 填写参数（改个名字，如 `openclaw-2`）
 5. Create stack
@@ -404,7 +404,7 @@ http://your-alb-url/openclaw-1/?token=YOUR_TOKEN
 
 ---
 
-**Ready to launch?** [Click here to deploy! →](https://console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/create/review?stackName=openclaw-complete&templateURL=https://raw.githubusercontent.com/CrypticDriver/openclaw-multi-deployment/master/cloudformation/00-master-all-in-one.yaml)
+**Ready to launch?** [Click here to deploy! →](https://console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/create/review?stackName=openclaw-complete&templateURL=https://raw.githubusercontent.com/CrypticDriver/openclawfleet/master/cloudformation/00-master-all-in-one.yaml)
 
 **Total time:** 15-20 minutes  
 **Difficulty:** Easy (just click buttons)  
