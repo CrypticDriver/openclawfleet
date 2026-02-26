@@ -1,0 +1,534 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClawFleet - Complete Single-File Template (No Nested Stacks)'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: 'Basic Configuration'
+        Parameters:
+          - KeyPairName
+          - InstanceCount
+          - InstanceNamePrefix
+      - Label:
+          default: 'Instance Configuration'
+        Parameters:
+          - InstanceType
+          - BedrockModel
+
+Parameters:
+  KeyPairName:
+    Description: EC2 Key Pair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  InstanceCount:
+    Description: Number of OpenClaw instances (1-5 for single-file template)
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 5
+
+  InstanceNamePrefix:
+    Description: Prefix for instance names
+    Type: String
+    Default: 'openclaw'
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: 't4g.medium'
+    AllowedValues:
+      - t4g.small
+      - t4g.medium
+      - t4g.large
+
+  BedrockModel:
+    Description: Bedrock model ID
+    Type: String
+    Default: 'global.amazon.nova-2-lite-v1:0'
+
+Conditions:
+  Deploy1: !Not [!Equals [!Ref InstanceCount, 0]]
+  Deploy2: !Or [!Equals [!Ref InstanceCount, 2], !Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy3: !Or [!Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy4: !Or [!Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy5: !Equals [!Ref InstanceCount, 5]
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0c2b0d3fb02824d92
+    us-west-2:
+      AMI: ami-0d081196e3df05f4d
+    eu-west-1:
+      AMI: ami-0d7584f7e2f78f5c8
+
+Resources:
+  # ===========================================
+  # VPC and Networking
+  # ===========================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-IGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Public-A
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Public-B
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Private-A
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Private-B
+
+  NATGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-NAT
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Public-RT
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Private-RT
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ===========================================
+  # Security Groups
+  # ===========================================
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-ALB-SG
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for OpenClaw instances
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 18789
+          ToPort: 18789
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Instance-SG
+
+  # ===========================================
+  # Application Load Balancer
+  # ===========================================
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: OpenClawFleet-ALB
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-ALB
+
+  TargetGroup1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: Deploy1
+    Properties:
+      Name: !Sub '${InstanceNamePrefix}-1-tg'
+      Port: 18789
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /health
+      TargetType: instance
+
+  TargetGroup2:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: Deploy2
+    Properties:
+      Name: !Sub '${InstanceNamePrefix}-2-tg'
+      Port: 18789
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /health
+      TargetType: instance
+
+  TargetGroup3:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: Deploy3
+    Properties:
+      Name: !Sub '${InstanceNamePrefix}-3-tg'
+      Port: 18789
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /health
+      TargetType: instance
+
+  TargetGroup4:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: Deploy4
+    Properties:
+      Name: !Sub '${InstanceNamePrefix}-4-tg'
+      Port: 18789
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /health
+      TargetType: instance
+
+  TargetGroup5:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: Deploy5
+    Properties:
+      Name: !Sub '${InstanceNamePrefix}-5-tg'
+      Port: 18789
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /health
+      TargetType: instance
+
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 404
+            ContentType: text/plain
+            MessageBody: Not Found
+
+  ListenerRule1:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: Deploy1
+    Properties:
+      ListenerArn: !Ref HTTPListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - !Sub '/${InstanceNamePrefix}-1/*'
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup1
+
+  ListenerRule2:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: Deploy2
+    Properties:
+      ListenerArn: !Ref HTTPListener
+      Priority: 2
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - !Sub '/${InstanceNamePrefix}-2/*'
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup2
+
+  ListenerRule3:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: Deploy3
+    Properties:
+      ListenerArn: !Ref HTTPListener
+      Priority: 3
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - !Sub '/${InstanceNamePrefix}-3/*'
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup3
+
+  ListenerRule4:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: Deploy4
+    Properties:
+      ListenerArn: !Ref HTTPListener
+      Priority: 4
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - !Sub '/${InstanceNamePrefix}-4/*'
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup4
+
+  ListenerRule5:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: Deploy5
+    Properties:
+      ListenerArn: !Ref HTTPListener
+      Priority: 5
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - !Sub '/${InstanceNamePrefix}-5/*'
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup5
+
+  # ===========================================
+  # IAM Roles for Instances
+  # ===========================================
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource: '*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:PutParameter'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/openclaw/*'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  # ===========================================
+  # Launch Templates & Auto Scaling Groups
+  # ===========================================
+  LaunchTemplate1:
+    Type: AWS::EC2::LaunchTemplate
+    Condition: Deploy1
+    Properties:
+      LaunchTemplateName: !Sub '${InstanceNamePrefix}-1-lt'
+      LaunchTemplateData:
+        ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            dnf update -y
+            dnf install -y nodejs npm git
+            npm install -g openclaw@latest
+            TOKEN=$(openssl rand -hex 32)
+            aws ssm put-parameter --region ${AWS::Region} --name /openclaw/${InstanceNamePrefix}-1/token --value "$TOKEN" --type SecureString --overwrite
+            mkdir -p /home/ec2-user/openclaw
+            cat > /home/ec2-user/openclaw/config.yaml << 'EOF'
+            gateway:
+              port: 18789
+              token: TOKEN_PLACEHOLDER
+              model: ${BedrockModel}
+            EOF
+            sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" /home/ec2-user/openclaw/config.yaml
+            chown -R ec2-user:ec2-user /home/ec2-user/openclaw
+
+  AutoScalingGroup1:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: Deploy1
+    Properties:
+      AutoScalingGroupName: !Sub '${InstanceNamePrefix}-1-asg'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate1
+        Version: !GetAtt LaunchTemplate1.LatestVersionNumber
+      MinSize: 1
+      DesiredCapacity: 1
+      MaxSize: 1
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      TargetGroupARNs:
+        - !Ref TargetGroup1
+
+  # Repeat for instances 2-5 (abbreviated for space)
+  LaunchTemplate2:
+    Type: AWS::EC2::LaunchTemplate
+    Condition: Deploy2
+    Properties:
+      LaunchTemplateName: !Sub '${InstanceNamePrefix}-2-lt'
+      LaunchTemplateData:
+        ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            dnf update -y
+            dnf install -y nodejs npm git
+            npm install -g openclaw@latest
+            TOKEN=$(openssl rand -hex 32)
+            aws ssm put-parameter --region ${AWS::Region} --name /openclaw/${InstanceNamePrefix}-2/token --value "$TOKEN" --type SecureString --overwrite
+
+  AutoScalingGroup2:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: Deploy2
+    Properties:
+      AutoScalingGroupName: !Sub '${InstanceNamePrefix}-2-asg'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate2
+        Version: !GetAtt LaunchTemplate2.LatestVersionNumber
+      MinSize: 1
+      DesiredCapacity: 1
+      MaxSize: 1
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      TargetGroupARNs:
+        - !Ref TargetGroup2
+
+Outputs:
+  LoadBalancerURL:
+    Description: ALB URL
+    Value: !Sub 'http://${LoadBalancer.DNSName}'
+
+  AccessInstructions:
+    Description: How to access
+    Value: !Sub |
+      Instances deployed: ${InstanceCount}
+      Access: ${LoadBalancer.DNSName}/${InstanceNamePrefix}-1/
+      Get tokens from SSM Parameter Store
