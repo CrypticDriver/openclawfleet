@@ -1,0 +1,541 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw Multi-Deployment - OpenClaw Instance with Auto Scaling'
+
+Parameters:
+  FoundationStackName:
+    Description: Name of the VPC Foundation stack
+    Type: String
+    Default: 'openclaw-foundation'
+
+  SharedStackName:
+    Description: Name of the Shared Resources stack
+    Type: String
+    Default: 'openclaw-shared'
+
+  InstanceName:
+    Description: Unique name for this OpenClaw instance
+    Type: String
+    MinLength: 3
+    MaxLength: 32
+    AllowedPattern: '^[a-z0-9-]+$'
+    ConstraintDescription: 'Only lowercase letters, numbers, and hyphens'
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: 't4g.medium'
+    AllowedValues:
+      - t4g.small
+      - t4g.medium
+      - t4g.large
+      - t4g.xlarge
+      - c7g.large
+      - c7g.xlarge
+      - c7g.2xlarge
+
+  BedrockModel:
+    Description: Bedrock model ID
+    Type: String
+    Default: 'global.amazon.nova-2-lite-v1:0'
+    AllowedValues:
+      - 'global.amazon.nova-2-lite-v1:0'
+      - 'us.amazon.nova-pro-v1:0'
+      - 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+      - 'global.anthropic.claude-opus-4-5-20251101-v1:0'
+      - 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+      - 'us.deepseek.r1-v1:0'
+      - 'us.meta.llama3-3-70b-instruct-v1:0'
+
+  KeyPairName:
+    Description: EC2 Key Pair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  MinSize:
+    Description: Minimum number of instances
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 10
+
+  DesiredCapacity:
+    Description: Desired number of instances
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 10
+
+  MaxSize:
+    Description: Maximum number of instances
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 10
+
+  VolumeSize:
+    Description: EBS volume size in GB
+    Type: Number
+    Default: 30
+    MinValue: 20
+    MaxValue: 500
+
+  EnableDetailedMonitoring:
+    Description: Enable detailed CloudWatch monitoring (additional cost)
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+  UseSpotInstances:
+    Description: Use Spot Instances (70% cost savings, may be interrupted)
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  UseDetailedMonitoring: !Equals [!Ref EnableDetailedMonitoring, 'true']
+  UseSpot: !Equals [!Ref UseSpotInstances, 'true']
+
+Mappings:
+  # Latest ARM64 Amazon Linux 2023 AMI IDs by region
+  RegionMap:
+    us-east-1:
+      AMI: ami-0c2b0d3fb02824d92
+    us-west-2:
+      AMI: ami-0d081196e3df05f4d
+    eu-west-1:
+      AMI: ami-0d7584f7e2f78f5c8
+    ap-northeast-1:
+      AMI: ami-0d52744d6551d851e
+
+Resources:
+  # =====================================================
+  # IAM Role for OpenClaw Instance
+  # =====================================================
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${InstanceName}-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        - 'arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy'
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource: 'arn:aws:bedrock:*:*:foundation-model/*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                  - 'ssm:GetParametersByPath'
+                  - 'ssm:PutParameter'
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/openclaw/${InstanceName}/*'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/openclaw/global/*'
+              - Effect: Allow
+                Action:
+                  - 'ssm:DescribeParameters'
+                Resource: '*'
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'logs:DescribeLogStreams'
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/openclaw/${SharedStackName}:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/openclaw/${InstanceName}:*'
+        - PolicyName: EC2Describe
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:DescribeTags'
+                Resource: '*'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: '/'
+      Roles:
+        - !Ref InstanceRole
+
+  # =====================================================
+  # Target Group for ALB
+  # =====================================================
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${InstanceName}-tg'
+      Port: 18789
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub '${FoundationStackName}-VPC-ID'
+      HealthCheckEnabled: true
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      TargetType: instance
+      DeregistrationDelay:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-tg'
+        - Key: OpenClawInstance
+          Value: !Ref InstanceName
+
+  # =====================================================
+  # ALB Listener Rule (Path-based routing)
+  # =====================================================
+  ListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn:
+        Fn::ImportValue: !Sub '${SharedStackName}-HTTP-Listener'
+      Priority: !Sub '${AWS::StackId}'  # Use stack ID hash for unique priority
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - !Sub '/${InstanceName}/*'
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # =====================================================
+  # Launch Template
+  # =====================================================
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${InstanceName}-lt'
+      LaunchTemplateData:
+        ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyPairName
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub '${SharedStackName}-Instance-SG'
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: !Ref VolumeSize
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+        Monitoring:
+          Enabled: !If [UseDetailedMonitoring, true, false]
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${InstanceName}-instance'
+              - Key: OpenClawInstance
+                Value: !Ref InstanceName
+              - Key: ManagedBy
+                Value: CloudFormation
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -e
+            exec > >(tee /var/log/user-data.log)
+            exec 2>&1
+            
+            echo "========================================="
+            echo "OpenClaw Instance Setup"
+            echo "Instance: ${InstanceName}"
+            echo "Model: ${BedrockModel}"
+            echo "Region: ${AWS::Region}"
+            echo "========================================="
+            
+            # Update system
+            echo "[1/8] Updating system..."
+            dnf update -y
+            
+            # Install dependencies
+            echo "[2/8] Installing dependencies..."
+            dnf install -y git curl wget unzip jq
+            
+            # Install Node.js 22.x
+            echo "[3/8] Installing Node.js..."
+            curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+            dnf install -y nodejs
+            node --version
+            npm --version
+            
+            # Install OpenClaw
+            echo "[4/8] Installing OpenClaw..."
+            npm install -g openclaw@latest
+            
+            # Generate Gateway Token
+            echo "[5/8] Generating gateway token..."
+            GATEWAY_TOKEN=$(openssl rand -hex 32)
+            
+            # Store token in SSM Parameter Store
+            aws ssm put-parameter \
+              --region ${AWS::Region} \
+              --name /openclaw/${InstanceName}/token \
+              --value "$GATEWAY_TOKEN" \
+              --type SecureString \
+              --overwrite \
+              --tags Key=OpenClawInstance,Value=${InstanceName}
+            
+            # Create OpenClaw config directory
+            echo "[6/8] Creating configuration..."
+            mkdir -p /home/ec2-user/openclaw
+            cd /home/ec2-user/openclaw
+            
+            # Initialize OpenClaw
+            cat > config.yaml << 'EOFCONFIG'
+            gateway:
+              port: 18789
+              token: TOKEN_PLACEHOLDER
+              model: ${BedrockModel}
+              region: ${AWS::Region}
+              awsBedrock: true
+              
+            channels: []
+            
+            agents:
+              main:
+                model: ${BedrockModel}
+                systemPrompt: |
+                  You are a helpful AI assistant powered by Amazon Bedrock.
+                  Instance: ${InstanceName}
+                  
+            logging:
+              level: info
+              cloudwatch:
+                enabled: true
+                logGroup: /openclaw/${InstanceName}
+            EOFCONFIG
+            
+            # Replace token placeholder
+            sed -i "s/TOKEN_PLACEHOLDER/$GATEWAY_TOKEN/g" config.yaml
+            
+            # Set ownership
+            chown -R ec2-user:ec2-user /home/ec2-user/openclaw
+            
+            # Create systemd service
+            echo "[7/8] Creating systemd service..."
+            cat > /etc/systemd/system/openclaw.service << 'EOFSERVICE'
+            [Unit]
+            Description=OpenClaw Gateway
+            After=network.target
+            
+            [Service]
+            Type=simple
+            User=ec2-user
+            WorkingDirectory=/home/ec2-user/openclaw
+            Environment="NODE_ENV=production"
+            Environment="AWS_REGION=${AWS::Region}"
+            ExecStart=/usr/bin/openclaw gateway start
+            Restart=always
+            RestartSec=10
+            StandardOutput=journal
+            StandardError=journal
+            
+            [Install]
+            WantedBy=multi-user.target
+            EOFSERVICE
+            
+            # Start OpenClaw
+            echo "[8/8] Starting OpenClaw..."
+            systemctl daemon-reload
+            systemctl enable openclaw
+            systemctl start openclaw
+            
+            # Wait for service to start
+            sleep 10
+            
+            # Check status
+            systemctl status openclaw
+            
+            # Signal completion
+            echo "========================================="
+            echo "OpenClaw setup complete!"
+            echo "Instance: ${InstanceName}"
+            echo "Status: Running"
+            echo "Port: 18789"
+            echo "========================================="
+            
+            # Store instance info in SSM
+            INSTANCE_ID=$(ec2-metadata --instance-id | cut -d ' ' -f 2)
+            aws ssm put-parameter \
+              --region ${AWS::Region} \
+              --name /openclaw/${InstanceName}/instance-id \
+              --value "$INSTANCE_ID" \
+              --type String \
+              --overwrite
+
+  # =====================================================
+  # Auto Scaling Group
+  # =====================================================
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${InstanceName}-asg'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      DesiredCapacity: !Ref DesiredCapacity
+      MaxSize: !Ref MaxSize
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetA'
+        - Fn::ImportValue: !Sub '${FoundationStackName}-PrivateSubnetB'
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-asg-instance'
+          PropagateAtLaunch: true
+        - Key: OpenClawInstance
+          Value: !Ref InstanceName
+          PropagateAtLaunch: true
+
+  # =====================================================
+  # Auto Scaling Policies
+  # =====================================================
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70.0
+
+  # =====================================================
+  # CloudWatch Alarms
+  # =====================================================
+  HighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${InstanceName}-high-cpu'
+      AlarmDescription: !Sub 'CPU utilization > 80% for ${InstanceName}'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroup
+      AlarmActions:
+        - Fn::ImportValue: !Sub '${SharedStackName}-SNS-Topic'
+
+  UnhealthyTargetAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${InstanceName}-unhealthy-targets'
+      AlarmDescription: !Sub 'Unhealthy targets detected for ${InstanceName}'
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+      AlarmActions:
+        - Fn::ImportValue: !Sub '${SharedStackName}-SNS-Topic'
+
+# =====================================================
+# Outputs
+# =====================================================
+Outputs:
+  InstanceName:
+    Description: OpenClaw instance name
+    Value: !Ref InstanceName
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceName'
+
+  TargetGroupArn:
+    Description: Target Group ARN
+    Value: !Ref TargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-TargetGroup'
+
+  AutoScalingGroupName:
+    Description: Auto Scaling Group name
+    Value: !Ref AutoScalingGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ASG'
+
+  AccessURL:
+    Description: Access URL for this instance
+    Value: !Sub
+      - '${ALBURL}/${InstanceName}/'
+      - ALBURL:
+          Fn::ImportValue: !Sub '${SharedStackName}-ALB-URL'
+
+  TokenParameter:
+    Description: SSM Parameter name for gateway token
+    Value: !Sub '/openclaw/${InstanceName}/token'
+
+  GetTokenCommand:
+    Description: Command to retrieve gateway token
+    Value: !Sub |
+      aws ssm get-parameter --region ${AWS::Region} --name /openclaw/${InstanceName}/token --with-decryption --query 'Parameter.Value' --output text
+
+  FullAccessURL:
+    Description: Complete access URL with token retrieval
+    Value: !Sub |
+      TOKEN=$(aws ssm get-parameter --region ${AWS::Region} --name /openclaw/${InstanceName}/token --with-decryption --query 'Parameter.Value' --output text)
+      echo "${ALBURL}/${InstanceName}/?token=$TOKEN"
+
+  SSMConnectCommand:
+    Description: Command to connect via SSM
+    Value: !Sub |
+      INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups --region ${AWS::Region} --auto-scaling-group-names ${AutoScalingGroup} --query 'AutoScalingGroups[0].Instances[0].InstanceId' --output text)
+      aws ssm start-session --target $INSTANCE_ID --region ${AWS::Region}
+
+  MonthlyCostEstimate:
+    Description: Estimated monthly cost
+    Value: !Sub
+      - 'EC2: $${EC2Cost}, EBS: $${EBSCost}, Bedrock: $5-8, Total: $${TotalCost}/mo'
+      - EC2Cost: !If
+          - UseSpot
+          - '7.20'  # t4g.medium Spot ~$0.01/hour
+          - '24.00'  # t4g.medium On-Demand
+        EBSCost: !Sub '${VolumeSize}'  # gp3 $0.08/GB
+        TotalCost: !If
+          - UseSpot
+          - !Sub '${VolumeSize}'  # ~$10-18
+          - !Sub '${VolumeSize}'  # ~$31-39
