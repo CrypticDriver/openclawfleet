@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClawFleet - Simplified Single-File Template (No Nested Stacks)'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: 'Basic Configuration'
+        Parameters:
+          - KeyPairName
+          - InstanceCount
+
+Parameters:
+  KeyPairName:
+    Description: EC2 Key Pair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  InstanceCount:
+    Description: Number of OpenClaw instances (1-5)
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 5
+
+Conditions:
+  Deploy1: !Not [!Equals [!Ref InstanceCount, 0]]
+  Deploy2: !Or [!Equals [!Ref InstanceCount, 2], !Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy3: !Or [!Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy4: !Or [!Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy5: !Equals [!Ref InstanceCount, 5]
+
+Outputs:
+  Message:
+    Description: Next steps
+    Value: |
+      Due to CloudFormation nested stack limitations, please use the simplified deployment:
+      1. Deploy Foundation separately: 01-vpc-foundation.yaml
+      2. Deploy Shared Resources: 02-shared-resources.yaml
+      3. Deploy Dashboard: 04-dashboard.yaml
+      4. Deploy Instances: 03-openclaw-instance.yaml (repeat N times)
+      
+      Or wait for S3-hosted templates with Launch Stack buttons.
+

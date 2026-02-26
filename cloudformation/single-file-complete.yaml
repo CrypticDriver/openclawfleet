@@ -45,7 +45,11 @@ Parameters:
   BedrockModel:
     Description: Bedrock model ID
     Type: String
-    Default: 'global.amazon.nova-2-lite-v1:0'
+    Default: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+    AllowedValues:
+      - 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+      - 'global.amazon.nova-2-lite-v1:0'
+      - 'us.amazon.nova-pro-v1:0'
 
 Conditions:
   Deploy1: !Not [!Equals [!Ref InstanceCount, 0]]
