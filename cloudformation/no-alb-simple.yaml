@@ -1,0 +1,333 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw Fleet - No ALB, SSM Access Only'
+
+Parameters:
+  KeyPairName:
+    Description: EC2 Key Pair (optional, use SSM for access)
+    Type: String
+    Default: ''
+
+  InstanceCount:
+    Description: Number of OpenClaw instances (1-5)
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 5
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: 't4g.medium'
+
+  BedrockModel:
+    Description: Bedrock model ID
+    Type: String
+    Default: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+
+  LatestAmiId:
+    Description: Latest Amazon Linux 2023 ARM64 AMI
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Conditions:
+  Deploy1: !Not [!Equals [!Ref InstanceCount, 0]]
+  Deploy2: !Or [!Equals [!Ref InstanceCount, 2], !Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy3: !Or [!Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy4: !Or [!Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
+  Deploy5: !Equals [!Ref InstanceCount, 5]
+  HasKeyPair: !Not [!Equals [!Ref KeyPairName, '']]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-IGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Public-A
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Public-RT
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for OpenClaw instances (SSM only)
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: OpenClawFleet-Instance-SG
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithResponseStream'
+                Resource: '*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:PutParameter'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/openclaw/*'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  Instance1:
+    Type: AWS::EC2::Instance
+    Condition: Deploy1
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: openclaw-1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          exec > >(tee /var/log/user-data.log)
+          exec 2>&1
+          
+          echo "Installing OpenClaw for Instance 1"
+          dnf update -y
+          dnf install -y git
+          
+          curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+          dnf install -y nodejs
+          
+          npm install -g openclaw@latest
+          
+          TOKEN=$(openssl rand -hex 32)
+          aws ssm put-parameter \
+            --region ${AWS::Region} \
+            --name /openclaw/openclaw-1/token \
+            --value "$TOKEN" \
+            --type SecureString \
+            --overwrite
+          
+          sudo -u ec2-user mkdir -p /home/ec2-user/openclaw/workspace
+          
+          sudo -u ec2-user cat > /home/ec2-user/openclaw/openclaw.json << 'EOFCONFIG'
+          {
+            "gateway": {
+              "mode": "local",
+              "port": 18789,
+              "bind": "loopback",
+              "auth": {
+                "mode": "token",
+                "token": "TOKEN_PLACEHOLDER"
+              }
+            },
+            "agents": {
+              "defaults": {
+                "workspace": "/home/ec2-user/openclaw/workspace",
+                "model": "${BedrockModel}"
+              }
+            }
+          }
+          EOFCONFIG
+          
+          sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" /home/ec2-user/openclaw/openclaw.json
+          
+          cat > /etc/systemd/system/openclaw.service << 'EOFSVC'
+          [Unit]
+          Description=OpenClaw Gateway
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=ec2-user
+          WorkingDirectory=/home/ec2-user/openclaw
+          ExecStart=/usr/bin/openclaw gateway run
+          Restart=always
+          RestartSec=10
+          Environment="AWS_REGION=${AWS::Region}"
+          Environment="OPENCLAW_CONFIG_PATH=/home/ec2-user/openclaw/openclaw.json"
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOFSVC
+          
+          systemctl daemon-reload
+          systemctl enable openclaw
+          systemctl start openclaw
+
+  Instance2:
+    Type: AWS::EC2::Instance
+    Condition: Deploy2
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: openclaw-2
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          dnf update -y && dnf install -y git
+          curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && dnf install -y nodejs
+          npm install -g openclaw@latest
+          TOKEN=$(openssl rand -hex 32)
+          aws ssm put-parameter --region ${AWS::Region} --name /openclaw/openclaw-2/token --value "$TOKEN" --type SecureString --overwrite
+          sudo -u ec2-user mkdir -p /home/ec2-user/openclaw/workspace
+          echo "{\"gateway\":{\"mode\":\"local\",\"port\":18789,\"bind\":\"loopback\",\"auth\":{\"mode\":\"token\",\"token\":\"$TOKEN\"}},\"agents\":{\"defaults\":{\"workspace\":\"/home/ec2-user/openclaw/workspace\",\"model\":\"${BedrockModel}\"}}}" | sudo -u ec2-user tee /home/ec2-user/openclaw/openclaw.json
+          cat > /etc/systemd/system/openclaw.service << 'EOF'
+          [Unit]
+          Description=OpenClaw Gateway
+          After=network.target
+          [Service]
+          Type=simple
+          User=ec2-user
+          WorkingDirectory=/home/ec2-user/openclaw
+          ExecStart=/usr/bin/openclaw gateway run
+          Restart=always
+          RestartSec=10
+          Environment="AWS_REGION=${AWS::Region}"
+          Environment="OPENCLAW_CONFIG_PATH=/home/ec2-user/openclaw/openclaw.json"
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          systemctl daemon-reload && systemctl enable openclaw && systemctl start openclaw
+
+  Instance3:
+    Type: AWS::EC2::Instance
+    Condition: Deploy3
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: openclaw-3
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          dnf update -y && dnf install -y git
+          curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && dnf install -y nodejs
+          npm install -g openclaw@latest
+          TOKEN=$(openssl rand -hex 32)
+          aws ssm put-parameter --region ${AWS::Region} --name /openclaw/openclaw-3/token --value "$TOKEN" --type SecureString --overwrite
+          sudo -u ec2-user mkdir -p /home/ec2-user/openclaw/workspace
+          echo "{\"gateway\":{\"mode\":\"local\",\"port\":18789,\"bind\":\"loopback\",\"auth\":{\"mode\":\"token\",\"token\":\"$TOKEN\"}},\"agents\":{\"defaults\":{\"workspace\":\"/home/ec2-user/openclaw/workspace\",\"model\":\"${BedrockModel}\"}}}" | sudo -u ec2-user tee /home/ec2-user/openclaw/openclaw.json
+          cat > /etc/systemd/system/openclaw.service << 'EOF'
+          [Unit]
+          Description=OpenClaw Gateway
+          After=network.target
+          [Service]
+          Type=simple
+          User=ec2-user
+          WorkingDirectory=/home/ec2-user/openclaw
+          ExecStart=/usr/bin/openclaw gateway run
+          Restart=always
+          RestartSec=10
+          Environment="AWS_REGION=${AWS::Region}"
+          Environment="OPENCLAW_CONFIG_PATH=/home/ec2-user/openclaw/openclaw.json"
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          systemctl daemon-reload && systemctl enable openclaw && systemctl start openclaw
+
+Outputs:
+  Instance1Id:
+    Condition: Deploy1
+    Description: Instance 1 ID
+    Value: !Ref Instance1
+  
+  Instance2Id:
+    Condition: Deploy2
+    Description: Instance 2 ID
+    Value: !Ref Instance2
+  
+  Instance3Id:
+    Condition: Deploy3
+    Description: Instance 3 ID
+    Value: !Ref Instance3
+  
+  SSMConnectCommand:
+    Description: SSM Port Forwarding command template
+    Value: 'aws ssm start-session --region us-west-2 --target INSTANCE_ID --document-name AWS-StartPortForwardingSession --parameters portNumber=18789,localPortNumber=LOCAL_PORT'
