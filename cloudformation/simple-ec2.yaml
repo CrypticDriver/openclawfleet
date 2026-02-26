@@ -52,25 +52,21 @@ Parameters:
       - 'global.amazon.nova-2-lite-v1:0'
       - 'us.amazon.nova-pro-v1:0'
 
+  # Auto-fetch latest ARM64 AMI from AWS
+  LatestAmiId:
+    Description: Latest Amazon Linux 2023 ARM64 AMI (auto-updated by AWS)
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
 Conditions:
+
+Resources:
   Deploy1: !Not [!Equals [!Ref InstanceCount, 0]]
   Deploy2: !Or [!Equals [!Ref InstanceCount, 2], !Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
   Deploy3: !Or [!Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
   Deploy4: !Or [!Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
   Deploy5: !Equals [!Ref InstanceCount, 5]
 
-Mappings:
-  RegionMap:
-    us-east-1:
-      AMI: ami-0c94855ba95c574c8  # Amazon Linux 2023 ARM64
-    us-west-2:
-      AMI: ami-08d8ac128e0a1b91c  # Amazon Linux 2023 ARM64
-    eu-west-1:
-      AMI: ami-0d64bb532e0502c46  # Amazon Linux 2023 ARM64
-    ap-northeast-1:
-      AMI: ami-0bba69335379e17f8  # Amazon Linux 2023 ARM64
-
-Resources:
   # ===========================================
   # VPC and Networking
   # ===========================================
@@ -458,7 +454,7 @@ Resources:
     Type: AWS::EC2::Instance
     Condition: Deploy1
     Properties:
-      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      ImageId: !Ref LatestAmiId
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyPairName
       IamInstanceProfile: !Ref InstanceProfile
@@ -535,7 +531,7 @@ Resources:
     Type: AWS::EC2::Instance
     Condition: Deploy2
     Properties:
-      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      ImageId: !Ref LatestAmiId
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyPairName
       IamInstanceProfile: !Ref InstanceProfile
@@ -559,7 +555,7 @@ Resources:
     Type: AWS::EC2::Instance
     Condition: Deploy3
     Properties:
-      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      ImageId: !Ref LatestAmiId
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyPairName
       IamInstanceProfile: !Ref InstanceProfile
@@ -583,7 +579,7 @@ Resources:
     Type: AWS::EC2::Instance
     Condition: Deploy4
     Properties:
-      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      ImageId: !Ref LatestAmiId
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyPairName
       IamInstanceProfile: !Ref InstanceProfile
@@ -607,7 +603,7 @@ Resources:
     Type: AWS::EC2::Instance
     Condition: Deploy5
     Properties:
-      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      ImageId: !Ref LatestAmiId
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyPairName
       IamInstanceProfile: !Ref InstanceProfile
