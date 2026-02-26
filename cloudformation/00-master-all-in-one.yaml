@@ -162,6 +162,22 @@ Resources:
           Value: Shared
 
   # =====================================================
+  # Dashboard Stack (Management Console)
+  # =====================================================
+  DashboardStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: SharedStack
+    Properties:
+      TemplateURL: !Sub 'https://${AWS::Region}-openclaw-templates.s3.${AWS::Region}.amazonaws.com/04-dashboard.yaml'
+      Parameters:
+        SharedStackName: !GetAtt SharedStack.Outputs.StackName
+      Tags:
+        - Key: Project
+          Value: OpenClaw-Multi
+        - Key: Component
+          Value: Dashboard
+
+  # =====================================================
   # OpenClaw Instance Stack
   # =====================================================
   InstanceStack:
@@ -191,6 +207,12 @@ Resources:
           Value: !Ref InstanceName
 
 Outputs:
+  DashboardURL:
+    Description: Management Dashboard URL
+    Value: !GetAtt DashboardStack.Outputs.DashboardURL
+    Export:
+      Name: !Sub '${AWS::StackName}-Dashboard-URL'
+
   AccessURL:
     Description: Access URL for your OpenClaw instance
     Value: !Sub

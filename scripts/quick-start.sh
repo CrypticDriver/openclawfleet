@@ -216,9 +216,31 @@ else
   echo "Using existing foundation stacks"
 fi
 
-# Step 4: Deploy First Instance
+# Step 4: Deploy Dashboard
 echo ""
-echo -e "${YELLOW}[4/6] Deploying OpenClaw Instance: $INSTANCE_NAME${NC}"
+echo -e "${YELLOW}[4/7] Deploying Management Dashboard...${NC}"
+echo "This will take approximately 2 minutes."
+echo ""
+
+aws cloudformation create-stack \
+  --region $REGION \
+  --stack-name openclaw-dashboard \
+  --template-body file://cloudformation/04-dashboard.yaml \
+  --parameters \
+    ParameterKey=SharedStackName,ParameterValue=openclaw-shared \
+  --capabilities CAPABILITY_NAMED_IAM
+
+echo "Waiting for dashboard deployment..."
+aws cloudformation wait stack-create-complete \
+  --region $REGION \
+  --stack-name openclaw-dashboard
+
+echo -e "${GREEN}✓ Dashboard deployed successfully${NC}"
+
+# Step 5: Deploy First Instance
+# Step 5: Deploy First Instance
+echo ""
+echo -e "${YELLOW}[5/7] Deploying OpenClaw Instance: $INSTANCE_NAME${NC}"
 echo "This will take approximately 5 minutes."
 echo ""
 
@@ -236,9 +258,10 @@ fi
 
 echo -e "${GREEN}✓ Instance deployed successfully${NC}"
 
-# Step 5: Wait for instance to be ready
+# Step 6: Wait for instance to be ready
+# Step 6: Wait for instance to be ready
 echo ""
-echo -e "${YELLOW}[5/6] Waiting for OpenClaw to start...${NC}"
+echo -e "${YELLOW}[6/7] Waiting for OpenClaw to start...${NC}"
 echo "This may take 2-3 minutes for initial setup."
 echo ""
 
@@ -246,9 +269,10 @@ sleep 120  # Wait 2 minutes for user data to run
 
 echo -e "${GREEN}✓ Instance should be ready${NC}"
 
-# Step 6: Display access information
+# Step 7: Display access information
+# Step 7: Display access information
 echo ""
-echo -e "${YELLOW}[6/6] Deployment Complete! 🎉${NC}"
+echo -e "${YELLOW}[7/7] Deployment Complete! 🎉${NC}"
 echo ""
 echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║                                                           ║${NC}"
@@ -256,6 +280,13 @@ echo -e "${CYAN}║                 🎉 DEPLOYMENT SUCCESSFUL 🎉             
 echo -e "${CYAN}║                                                           ║${NC}"
 echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
 echo ""
+
+# Get Dashboard URL
+DASHBOARD_URL=$(aws cloudformation describe-stacks \
+  --region $REGION \
+  --stack-name openclaw-dashboard \
+  --query 'Stacks[0].Outputs[?OutputKey==`DashboardURL`].OutputValue' \
+  --output text 2>/dev/null)
 
 # Get access URL
 ALB_URL=$(aws cloudformation describe-stacks \
@@ -272,7 +303,13 @@ TOKEN=$(aws ssm get-parameter \
   --query 'Parameter.Value' \
   --output text 2>/dev/null)
 
-echo -e "${GREEN}Access Information:${NC}"
+echo -e "${GREEN}🎛️  Management Dashboard:${NC}"
+echo ""
+echo -e "${CYAN}${DASHBOARD_URL}${NC}"
+echo ""
+echo -e "${YELLOW}在这里可以看到所有实例、一键打开 Web UI！${NC}"
+echo ""
+echo -e "${GREEN}🚀 Instance Access:${NC}"
 echo ""
 echo "Base URL:    ${ALB_URL}/${INSTANCE_NAME}/"
 echo "Full URL:    ${ALB_URL}/${INSTANCE_NAME}/?token=${TOKEN}"
