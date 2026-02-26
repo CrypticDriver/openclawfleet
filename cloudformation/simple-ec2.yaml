@@ -504,18 +504,21 @@ Resources:
             --type SecureString \
             --overwrite
           
-          # Create config
+          # Create workspace
           mkdir -p /home/ec2-user/openclaw
-          cat > /home/ec2-user/openclaw/config.yaml << 'EOF'
+          cd /home/ec2-user/openclaw
+          
+          # Initialize clawdbot
+          cat > config.yaml << 'EOF'
           gateway:
             port: 18789
             token: TOKEN_PLACEHOLDER
-            model: ${BedrockModel}
-            region: ${AWS::Region}
-            awsBedrock: true
+          agents:
+            - id: main
+              model: ${BedrockModel}
           EOF
           
-          sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" /home/ec2-user/openclaw/config.yaml
+          sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" config.yaml
           chown -R ec2-user:ec2-user /home/ec2-user/openclaw
           
           # Create systemd service
@@ -528,9 +531,10 @@ Resources:
           Type=simple
           User=ec2-user
           WorkingDirectory=/home/ec2-user/openclaw
-          ExecStart=/usr/bin/openclaw gateway start
+          ExecStart=/usr/bin/openclaw gateway run --port 18789
           Restart=always
           RestartSec=10
+          Environment="AWS_REGION=${AWS::Region}"
           
           [Install]
           WantedBy=multi-user.target
