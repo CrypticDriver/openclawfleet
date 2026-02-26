@@ -59,12 +59,25 @@ Parameters:
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
 
 Conditions:
-
-  Deploy1: !Not [!Equals [!Ref InstanceCount, 0]]
-  Deploy2: !Or [!Equals [!Ref InstanceCount, 2], !Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
-  Deploy3: !Or [!Equals [!Ref InstanceCount, 3], !Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
-  Deploy4: !Or [!Equals [!Ref InstanceCount, 4], !Equals [!Ref InstanceCount, 5]]
-  Deploy5: !Equals [!Ref InstanceCount, 5]
+  Deploy1: !Not 
+    - !Equals 
+      - !Ref InstanceCount
+      - 0
+  Deploy2: !Or
+    - !Equals [!Ref InstanceCount, 2]
+    - !Equals [!Ref InstanceCount, 3]
+    - !Equals [!Ref InstanceCount, 4]
+    - !Equals [!Ref InstanceCount, 5]
+  Deploy3: !Or
+    - !Equals [!Ref InstanceCount, 3]
+    - !Equals [!Ref InstanceCount, 4]
+    - !Equals [!Ref InstanceCount, 5]
+  Deploy4: !Or
+    - !Equals [!Ref InstanceCount, 4]
+    - !Equals [!Ref InstanceCount, 5]
+  Deploy5: !Equals 
+    - !Ref InstanceCount
+    - 5
 
 Resources:
   # ===========================================
