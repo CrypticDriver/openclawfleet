@@ -61,11 +61,13 @@ Conditions:
 Mappings:
   RegionMap:
     us-east-1:
-      AMI: ami-0c2b0d3fb02824d92
+      AMI: ami-0453ec754f44f9a4a  # Amazon Linux 2023 ARM64
     us-west-2:
-      AMI: ami-0d081196e3df05f4d
+      AMI: ami-07d07d65c47e5aa90  # Amazon Linux 2023 ARM64
     eu-west-1:
-      AMI: ami-0d7584f7e2f78f5c8
+      AMI: ami-0d64bb532e0502c46  # Amazon Linux 2023 ARM64
+    ap-northeast-1:
+      AMI: ami-0bba69335379e17f8  # Amazon Linux 2023 ARM64
 
 Resources:
   # ===========================================
