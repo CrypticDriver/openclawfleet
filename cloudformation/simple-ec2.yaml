@@ -531,10 +531,11 @@ Resources:
           Type=simple
           User=ec2-user
           WorkingDirectory=/home/ec2-user/openclaw
-          ExecStart=/usr/bin/openclaw gateway run --port 18789
+          ExecStart=/usr/bin/openclaw gateway run --port 18789 --allow-unconfigured
           Restart=always
           RestartSec=10
           Environment="AWS_REGION=${AWS::Region}"
+          Environment="OPENCLAW_CONFIG_PATH=/home/ec2-user/openclaw/config.yaml"
           
           [Install]
           WantedBy=multi-user.target
