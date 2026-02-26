@@ -504,21 +504,29 @@ Resources:
             --type SecureString \
             --overwrite
           
-          # Create workspace
+          # Create config with LAN bind mode
           mkdir -p /home/ec2-user/openclaw
-          cd /home/ec2-user/openclaw
+          cat > /home/ec2-user/openclaw/openclaw.json << 'EOF'
+{
+  "gateway": {
+    "mode": "local",
+    "port": 18789,
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "TOKEN_PLACEHOLDER"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/home/ec2-user/openclaw/workspace",
+      "model": "${BedrockModel}"
+    }
+  }
+}
+EOF
           
-          # Initialize clawdbot
-          cat > config.yaml << 'EOF'
-          gateway:
-            port: 18789
-            token: TOKEN_PLACEHOLDER
-          agents:
-            - id: main
-              model: ${BedrockModel}
-          EOF
-          
-          sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" config.yaml
+          sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" /home/ec2-user/openclaw/openclaw.json
           chown -R ec2-user:ec2-user /home/ec2-user/openclaw
           
           # Create systemd service
@@ -531,11 +539,11 @@ Resources:
           Type=simple
           User=ec2-user
           WorkingDirectory=/home/ec2-user/openclaw
-          ExecStart=/usr/bin/openclaw gateway run --port 18789 --allow-unconfigured
+          ExecStart=/usr/bin/openclaw gateway run
           Restart=always
           RestartSec=10
           Environment="AWS_REGION=${AWS::Region}"
-          Environment="OPENCLAW_CONFIG_PATH=/home/ec2-user/openclaw/config.yaml"
+          Environment="OPENCLAW_CONFIG_PATH=/home/ec2-user/openclaw/openclaw.json"
           
           [Install]
           WantedBy=multi-user.target
